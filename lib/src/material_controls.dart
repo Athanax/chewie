@@ -6,6 +6,7 @@ import 'package:chewie/src/material_progress_bar.dart';
 import 'package:chewie/src/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:flutter/services.dart';
 
 class MaterialControls extends StatefulWidget {
   const MaterialControls({Key key}) : super(key: key);
@@ -21,10 +22,9 @@ class _MaterialControlsState extends State<MaterialControls> {
   double _latestVolume;
   bool _hideStuff = true;
   Timer _hideTimer;
-  Timer _initTimer;
+  Timer _showTimer;
   Timer _showAfterExpandCollapseTimer;
   bool _dragging = false;
-  bool _displayTapped = false;
 
   final barHeight = 48.0;
   final marginSize = 5.0;
@@ -48,10 +48,11 @@ class _MaterialControlsState extends State<MaterialControls> {
               ),
             );
     }
-
-    return MouseRegion(
-      onHover: (_) {
-        _cancelAndRestartTimer();
+    return Focus(
+      autofocus: true,
+      onKey: (FocusNode node, RawKeyEvent event) {
+        handleKeyEvent(node, event);
+        return true;
       },
       child: GestureDetector(
         onTap: () => _cancelAndRestartTimer(),
@@ -86,7 +87,7 @@ class _MaterialControlsState extends State<MaterialControls> {
   void _dispose() {
     controller.removeListener(_updateState);
     _hideTimer?.cancel();
-    _initTimer?.cancel();
+    _showTimer?.cancel();
     _showAfterExpandCollapseTimer?.cancel();
   }
 
@@ -102,6 +103,54 @@ class _MaterialControlsState extends State<MaterialControls> {
     }
 
     super.didChangeDependencies();
+  }
+
+  // i added this function to return the position of the video at any instance
+  Future printTime() async {
+    Duration time = await controller.position;
+    return new DateTime(time.inSeconds).toString().substring(0, 4);
+  }
+
+  // i added this method to handle key events
+  Future<bool> handleKeyEvent(FocusNode node, RawKeyEvent event) async {
+    if (event is RawKeyDownEvent) {
+      String timeNow = await printTime();
+      int timeN = int.parse(timeNow);
+      _cancelAndRestartTimer();
+      if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+          event.logicalKey == LogicalKeyboardKey.mediaRewind) {
+        controller.seekTo(Duration(seconds: timeN - 10));
+      } else if (event.logicalKey == LogicalKeyboardKey.arrowRight ||
+          event.logicalKey == LogicalKeyboardKey.mediaFastForward) {
+        controller.seekTo(Duration(seconds: timeN + 20));
+      } else if (event.logicalKey == LogicalKeyboardKey.enter ||
+          event.logicalKey == LogicalKeyboardKey.space ||
+          event.logicalKey == LogicalKeyboardKey.mediaPlayPause ||
+          event.logicalKey == LogicalKeyboardKey.mediaSelect ||
+          event.logicalKey == LogicalKeyboardKey.select ||
+          event.logicalKey == LogicalKeyboardKey.selectTask ||
+          event.logicalKey == LogicalKeyboardKey.keyboardLayoutSelect ||
+          event.logicalKey == LogicalKeyboardKey.gameButtonSelect) {
+        if (controller.value.isPlaying) {
+          controller.pause();
+        } else {
+          controller.play();
+        }
+      } else if (event.logicalKey == LogicalKeyboardKey.mediaPlay) {
+        if (!controller.value.isPlaying) {
+          controller.play();
+        }
+      } else if (event.logicalKey == LogicalKeyboardKey.pause ||
+          event.logicalKey == LogicalKeyboardKey.mediaPlayPause) {
+        if (controller.value.isPlaying) {
+          controller.pause();
+        }
+      }
+
+      // _controller.seekTo(Duration(seconds: timeN + 20));
+      return true;
+    }
+    return false;
   }
 
   AnimatedOpacity _buildBottomBar(
@@ -162,22 +211,15 @@ class _MaterialControlsState extends State<MaterialControls> {
   Expanded _buildHitArea() {
     return Expanded(
       child: GestureDetector(
-        onTap: () {
-          if (_latestValue != null && _latestValue.isPlaying) {
-            if (_displayTapped) {
-              setState(() {
-                _hideStuff = true;
-              });
-            } else
-              _cancelAndRestartTimer();
-          } else {
-            _playPause();
+        onTap: _latestValue != null && _latestValue.isPlaying
+            ? _cancelAndRestartTimer
+            : () {
+                _playPause();
 
-            setState(() {
-              _hideStuff = true;
-            });
-          }
-        },
+                setState(() {
+                  _hideStuff = true;
+                });
+              },
         child: Container(
           color: Colors.transparent,
           child: Center(
@@ -286,7 +328,6 @@ class _MaterialControlsState extends State<MaterialControls> {
 
     setState(() {
       _hideStuff = false;
-      _displayTapped = true;
     });
   }
 
@@ -300,13 +341,11 @@ class _MaterialControlsState extends State<MaterialControls> {
       _startHideTimer();
     }
 
-    if (chewieController.showControlsOnInitialize) {
-      _initTimer = Timer(Duration(milliseconds: 200), () {
-        setState(() {
-          _hideStuff = false;
-        });
+    _showTimer = Timer(Duration(milliseconds: 200), () {
+      setState(() {
+        _hideStuff = false;
       });
-    }
+    });
   }
 
   void _onExpandCollapse() {
@@ -323,8 +362,6 @@ class _MaterialControlsState extends State<MaterialControls> {
   }
 
   void _playPause() {
-    bool isFinished = _latestValue.position >= _latestValue.duration;
-
     setState(() {
       if (controller.value.isPlaying) {
         _hideStuff = false;
@@ -338,9 +375,6 @@ class _MaterialControlsState extends State<MaterialControls> {
             controller.play();
           });
         } else {
-          if (isFinished) {
-            controller.seekTo(Duration(seconds: 0));
-          }
           controller.play();
         }
       }
