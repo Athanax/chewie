@@ -106,16 +106,15 @@ class _MaterialControlsState extends State<MaterialControls> {
   }
 
   // i added this function to return the position of the video at any instance
-  Future printTime() async {
+  Future<int> printTime() async {
     Duration time = await controller.position;
-    return new DateTime(time.inSeconds).toString().substring(0, 4);
+    return time.inSeconds;
   }
 
   // i added this method to handle key events
   Future<bool> handleKeyEvent(FocusNode node, RawKeyEvent event) async {
     if (event is RawKeyDownEvent) {
-      String timeNow = await printTime();
-      int timeN = int.parse(timeNow);
+      int timeN = await printTime();
       _cancelAndRestartTimer();
       if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
           event.logicalKey == LogicalKeyboardKey.mediaRewind) {
